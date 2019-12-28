@@ -279,18 +279,23 @@ void main() {
       // AND move the world so that the camera is effectively the origin
       var viewProjectionMatrix = m4.multiply(projectionMatrix, viewMatrix);
 
-      var worldMatrix = m4.yRotation(0);
-      var worldViewProjectionMatrix = m4.multiply(viewProjectionMatrix,
-        worldMatrix);
-      var worldInverseMatrix = m4.inverse(worldMatrix);
-      var worldInverseTransposeMatrix = m4.transpose(worldInverseMatrix);
+      // var worldMatrix = m4.identity();
+      // var worldViewProjectionMatrix = m4.multiply(viewProjectionMatrix,
+      //   worldMatrix);
+      // var worldInverseTransposeMatrix = m4.transpose(m4.inverse(worldMatrix));
       
-      gl.uniformMatrix4fv(
-        worldLocation, false,
-        worldMatrix);
-      gl.uniformMatrix4fv(
-        worldInverseTransposeLocation, false,
-        worldInverseTransposeMatrix);
+      // gl.uniformMatrix4fv(
+      //   worldLocation, false,
+      //   worldMatrix);
+      // gl.uniformMatrix4fv(
+      //   worldInverseTransposeLocation, false,
+      //   worldInverseTransposeMatrix);
+      
+      // Set the color to use
+      gl.uniform4fv(colorLocation, [0.2, 1, 0.2, 1]); // green
+  
+      // set the light position.
+      gl.uniform3fv(lightWorldPositionLocation, lightPos);
 
       // Draw heads in a grid
       var deep = 2;
@@ -301,13 +306,34 @@ void main() {
         for (var xx = 0; xx < across; ++xx) {
           var u = xx / (across - 1);
           var x = (u - .5) * across * 150;
-          var matrix = m4.lookAt([x, 0, z], target, up);
-          drawHead(matrix, worldViewProjectionMatrix, worldViewProjectionLocation, numVertices);
+          var worldMatrix = m4.lookAt([x, 0, z], target, up);
+          var worldViewProjectionMatrix = m4.multiply(viewProjectionMatrix,
+            worldMatrix);
+          var worldInverseTransposeMatrix = m4.transpose(m4.inverse(worldMatrix));
+
+          gl.uniformMatrix4fv(
+            worldLocation, false,
+            worldMatrix);
+          gl.uniformMatrix4fv(
+            worldInverseTransposeLocation, false,
+            worldInverseTransposeMatrix);
+
+          drawHead(worldMatrix, worldViewProjectionMatrix, worldViewProjectionLocation, numVertices);
           console.log('drawHeat at ' + x + ' ' + z + ' ' + v + ' ' + u);
         }
       }
+      var worldMatrix = m4.translation(target[0], target[1], target[2]);
+      var worldViewProjectionMatrix = m4.multiply(viewProjectionMatrix,
+        worldMatrix);
+      var worldInverseTransposeMatrix = m4.transpose(m4.inverse(worldMatrix));
 
-      drawHead(m4.translation(target[0], target[1], target[2]), worldViewProjectionMatrix, worldViewProjectionLocation, numVertices);
+      gl.uniformMatrix4fv(
+        worldLocation, false,
+        worldMatrix);
+      gl.uniformMatrix4fv(
+        worldInverseTransposeLocation, false,
+        worldInverseTransposeMatrix);
+      drawHead(worldMatrix, worldViewProjectionMatrix, worldViewProjectionLocation, numVertices);
     }
 
     function drawHead(matrix, viewProjectionMatrix, matrixLocation, numVertices) {
@@ -316,12 +342,6 @@ void main() {
 
       // Set the matrix.
       gl.uniformMatrix4fv(matrixLocation, false, matrix);
-
-      // Set the color to use
-      gl.uniform4fv(colorLocation, [0.2, 1, 0.2, 1]); // green
-
-      // set the light position.
-      gl.uniform3fv(lightWorldPositionLocation, lightPos);
 
       // Draw the geometry.
       var primitiveType = gl.TRIANGLES;
@@ -665,6 +685,15 @@ void main() {
         m[1], m[5], m[9], m[13],
         m[2], m[6], m[10], m[14],
         m[3], m[7], m[11], m[15],
+      ];
+    },
+
+    identity: function () {
+      return [
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
       ];
     },
   };
