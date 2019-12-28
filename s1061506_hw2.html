@@ -13,7 +13,7 @@
   <div class="description">
     Drag slider to move camera.
   </div>
-  <canvas id="canvas"></canvas>
+  <canvas id="canvas" height="450" width="800"></canvas>
   <div id="uiContainer">
     <div id="ui">
       <div id="targetAngle"></div>
@@ -43,19 +43,31 @@ for webgl-utils, m3, m4, and webgl-lessons-ui.
 in vec4 a_position;
 in vec3 a_normal;
 
+uniform vec3 u_lightWorldPosition;
+
+uniform mat4 u_world;
 // A matrix to transform the positions by
-uniform mat4 u_matrix;
+uniform mat4 u_worldViewProjection;
+uniform mat4 u_worldInverseTranspose;
 
 // a varying the color to the fragment shader
 out vec3 v_normal;
+out vec3 v_surfaceToLight;
 
 // all shaders have a main function
 void main() {
   // Multiply the position by the matrix.
-  gl_Position = u_matrix * a_position;
+  gl_Position = u_worldViewProjection * a_position;
 
   // Pass the normal to the fragment shader.
-  v_normal = a_normal;
+  v_normal = mat3(u_worldInverseTranspose) * a_normal;
+
+  // compute the world position of the surface
+  vec3 surfaceWorldPosition = (u_world * a_position).xyz;
+ 
+  // compute the vector of the surface to the light
+  // and pass it to the fragment shader
+  v_surfaceToLight = u_lightWorldPosition - surfaceWorldPosition;
 }
 `;
 
@@ -65,8 +77,8 @@ precision mediump float;
 
 // Passed in and varied from the vertex shader.
 in vec3 v_normal;
+in vec3 v_surfaceToLight;
  
-uniform vec3 u_reverseLightDirection;
 uniform vec4 u_color;
 
 // we need to declare an output for the fragment shader
@@ -78,9 +90,9 @@ void main() {
   // will make it a unit vector again
   vec3 normal = normalize(v_normal);
  
-  // compute the light by taking the dot product
-  // of the normal to the light's reverse direction
-  float light = dot(normal, u_reverseLightDirection);
+  vec3 surfaceToLightDirection = normalize(v_surfaceToLight);
+
+  float light = dot(normal, surfaceToLightDirection);
  
   outColor = u_color;
  
@@ -106,13 +118,17 @@ void main() {
 
     // look up where the vertex data needs to go.
     var positionAttributeLocation = gl.getAttribLocation(program, "a_position");
-    var normalAttributeLocation = gl.getAttribLocation(program, "a_normal")
+    var normalAttributeLocation = gl.getAttribLocation(program, "a_normal");
 
     // look up uniform locations
-    var matrixLocation = gl.getUniformLocation(program, "u_matrix");
+    var worldViewProjectionLocation =
+        gl.getUniformLocation(program, "u_worldViewProjection");
+    var worldInverseTransposeLocation = gl.getUniformLocation(program, "u_worldInverseTranspose");
     var colorLocation = gl.getUniformLocation(program, "u_color");
-    var reverseLightDirectionLocation =
-      gl.getUniformLocation(program, "u_reverseLightDirection");
+    var lightWorldPositionLocation =
+      gl.getUniformLocation(program, "u_lightWorldPosition");
+    var worldLocation =
+      gl.getUniformLocation(program, "u_world");
 
     // Create a buffer
     var positionBuffer = gl.createBuffer();
@@ -149,7 +165,7 @@ void main() {
     gl.enableVertexAttribArray(normalAttributeLocation);
 
     var size = 3;          // 3 components per iteration
-    var type = gl.UNSIGNED_BYTE;   // the data is 8bit unsigned bytes
+    var type = gl.FLOAT;   // the data is 8bit unsigned bytes
     var normalize = false;
     var stride = 0;        // 0 = move forward size * sizeof(type) each iteration to get the next color
     var offset = 0;        // start at the beginning of the buffer
@@ -170,10 +186,14 @@ void main() {
     var targetAngleRadians = 0;
     var targetRadius = 300;
     var fieldOfViewRadians = degToRad(60);
-
+    
     var lightTheta = 0;
     var lightPhi = 0;
-    var lightPos = [0, 0, 0];
+    var lightPos = [0.0, 0.0, 0.0];
+    var lightRadius = 100;
+    lightPos[0] = lightRadius * Math.sin(lightTheta) * Math.cos(lightPhi);
+    lightPos[1] = lightRadius * Math.sin(lightTheta) * Math.sin(lightPhi);
+    lightPos[2] = lightRadius * Math.cos(lightTheta);
 
     drawScene();
 
@@ -195,19 +215,20 @@ void main() {
       drawScene();
     }
 
+
     function updateLightTheta(event, ui) {
       lightTheta = degToRad(ui.value);
-      lightPos[0] = 0.75 * targetRadius * Math.sin(lightTheta) * Math.cos(lightPhi);
-      lightPos[1] = 0.75 * targetRadius * Math.sin(lightTheta) * Math.sin(lightPhi);
-      lightPos[2] = 0.75 * targetRadius * Math.cos(lightTheta);
+      lightPos[0] = lightRadius * Math.sin(lightTheta) * Math.cos(lightPhi);
+      lightPos[1] = lightRadius * Math.sin(lightTheta) * Math.sin(lightPhi);
+      lightPos[2] = lightRadius * Math.cos(lightTheta);
       drawScene();
     }
 
     function updateLightPhi(event, ui) {
       lightPhi = degToRad(ui.value);
-      lightPos[0] = 0.75 * targetRadius * Math.sin(lightTheta) * Math.cos(lightPhi);
-      lightPos[1] = 0.75 * targetRadius * Math.sin(lightTheta) * Math.sin(lightPhi);
-      lightPos[2] = 0.75 * targetRadius * Math.cos(lightTheta);
+      lightPos[0] = lightRadius * Math.sin(lightTheta) * Math.cos(lightPhi);
+      lightPos[1] = lightRadius * Math.sin(lightTheta) * Math.sin(lightPhi);
+      lightPos[2] = lightRadius * Math.cos(lightTheta);
       drawScene();
     }
 
@@ -245,7 +266,7 @@ void main() {
       var projectionMatrix = m4.perspective(fieldOfViewRadians, aspect, zNear, zFar);
 
       var cameraTarget = [0, -100, 0];
-      var cameraPosition = [0, 200, 500];
+      var cameraPosition = [0, 200, 400];
       var up = [0, 1, 0];
 
       // Compute the camera's matrix using look at.
@@ -258,6 +279,19 @@ void main() {
       // AND move the world so that the camera is effectively the origin
       var viewProjectionMatrix = m4.multiply(projectionMatrix, viewMatrix);
 
+      var worldMatrix = m4.yRotation(0);
+      var worldViewProjectionMatrix = m4.multiply(viewProjectionMatrix,
+        worldMatrix);
+      var worldInverseMatrix = m4.inverse(worldMatrix);
+      var worldInverseTransposeMatrix = m4.transpose(worldInverseMatrix);
+      
+      gl.uniformMatrix4fv(
+        worldLocation, false,
+        worldMatrix);
+      gl.uniformMatrix4fv(
+        worldInverseTransposeLocation, false,
+        worldInverseTransposeMatrix);
+
       // Draw heads in a grid
       var deep = 2;
       var across = 4;
@@ -268,12 +302,12 @@ void main() {
           var u = xx / (across - 1);
           var x = (u - .5) * across * 150;
           var matrix = m4.lookAt([x, 0, z], target, up);
-          drawHead(matrix, viewProjectionMatrix, matrixLocation, numVertices);
+          drawHead(matrix, worldViewProjectionMatrix, worldViewProjectionLocation, numVertices);
           console.log('drawHeat at ' + x + ' ' + z + ' ' + v + ' ' + u);
         }
       }
 
-      drawHead(m4.translation(target[0], target[1], target[2]), viewProjectionMatrix, matrixLocation, numVertices);
+      drawHead(m4.translation(target[0], target[1], target[2]), worldViewProjectionMatrix, worldViewProjectionLocation, numVertices);
     }
 
     function drawHead(matrix, viewProjectionMatrix, matrixLocation, numVertices) {
@@ -286,8 +320,8 @@ void main() {
       // Set the color to use
       gl.uniform4fv(colorLocation, [0.2, 1, 0.2, 1]); // green
 
-      // set the light direction.
-      gl.uniform3fv(reverseLightDirectionLocation, m4.normalize([0.5, -0.7, 1]));
+      // set the light position.
+      gl.uniform3fv(lightWorldPositionLocation, lightPos);
 
       // Draw the geometry.
       var primitiveType = gl.TRIANGLES;
@@ -326,7 +360,7 @@ void main() {
 
   function setNormals(gl) {
     var normals = HeadData.normals;
-    var u_normals = new Uint8Array(normals.length);
+    var u_normals = new Float32Array(normals.length);
     var offset = 0;
     for (var ii = 0; ii < u_normals.length; ii += 3) {
       for (var jj = 0; jj < 3; ++jj) {
