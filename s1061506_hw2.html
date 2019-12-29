@@ -275,7 +275,7 @@ void main() {
   gl_Position = u_worldViewProjection * a_position;
 
   // Pass the normal to the fragment shader.
-  v_normal = mat3(u_world) * a_normal;
+  v_normal = mat3(u_worldInverseTranspose) * a_normal;
 
   // compute the world position of the surface
   vec3 surfaceWorldPosition = (u_world * a_position).xyz;
@@ -300,6 +300,7 @@ in vec3 v_surfaceToLight;
 in vec3 v_surfaceToView;
  
 uniform vec4 u_color;
+uniform float u_shininess;
 
 // we need to declare an output for the fragment shader
 out vec4 outColor;
@@ -316,7 +317,8 @@ void main() {
 
 
   float light = dot(normal, surfaceToLightDirection);
-  float specular = dot(normal, halfVector);
+  float NdotH = max( 0.0, dot(normal, halfVector) );
+  float specular = ( u_shininess + 2.0 ) * pow( NdotH, u_shininess ) / ( 2.0 * 3.14159265 );
  
   outColor = u_color;
  
@@ -363,6 +365,7 @@ void main() {
       gl.getUniformLocation(program, "u_lightWorldPosition");
     var viewWorldPositionLocation =
       gl.getUniformLocation(program, "u_viewWorldPosition");
+    var shininessLocation = gl.getUniformLocation(program, "u_shininess");
 
     // Create a buffer
     var positionBuffer = gl.createBuffer();
@@ -424,13 +427,13 @@ void main() {
     var lightTheta = Math.PI / 2;
     var lightPhi = 0;
     var lightPos = [0.0, 0.0, 0.0];
-    var lightRadius = 400;
+    var lightRadius = 300;
     lightPos[2] = lightRadius * Math.sin(lightTheta) * Math.cos(lightPhi);
     lightPos[0] = lightRadius * Math.sin(lightTheta) * Math.sin(lightPhi);
     lightPos[1] = lightRadius * Math.cos(lightTheta);
 
-    var cameraTheta = Math.PI / 2;
-    var cameraPhi = 0;
+    var cameraTheta = degToRad(60);
+    var cameraPhi = degToRad(-220);
     var cameraTarget = [0, 0, 0];
     var cameraPosition = [0, 0, 0];
     var cameraRadius = 500;
@@ -446,8 +449,8 @@ void main() {
     webglLessonsUI.setupSlider("#targetHeight", { value: target[1], slide: updateTargetHeight, min: -300, max: 300 });
     webglLessonsUI.setupSlider("#lightTheta", { value: radToDeg(lightTheta), slide: updateLightTheta, min: -360, max: 360 });
     webglLessonsUI.setupSlider("#lightPhi", { value: radToDeg(lightPhi), slide: updateLightPhi, min: -360, max: 360 });
-    webglLessonsUI.setupSlider("#cameraTheta", { value: radToDeg(lightTheta), slide: updateCameraTheta, min: -360, max: 360 });
-    webglLessonsUI.setupSlider("#cameraPhi", { value: radToDeg(lightPhi), slide: updateCameraPhi, min: -360, max: 360 });
+    webglLessonsUI.setupSlider("#cameraTheta", { value: radToDeg(cameraTheta), slide: updateCameraTheta, min: 1, max: 179 });
+    webglLessonsUI.setupSlider("#cameraPhi", { value: radToDeg(cameraPhi), slide: updateCameraPhi, min: -360, max: 360 });
 
     function updateTargetAngle(event, ui) {
       targetAngleRadians = degToRad(ui.value);
@@ -535,25 +538,15 @@ void main() {
       // AND move the world so that the camera is effectively the origin
       var viewProjectionMatrix = m4.multiply(projectionMatrix, viewMatrix);
 
-      // var worldMatrix = m4.identity();
-      // var worldViewProjectionMatrix = m4.multiply(viewProjectionMatrix,
-      //   worldMatrix);
-      // var worldInverseTransposeMatrix = m4.transpose(m4.inverse(worldMatrix));
-
-      // gl.uniformMatrix4fv(
-      //   worldLocation, false,program
-      //   worldMatrix);
-      // gl.uniformMatrix4fv(
-      //   worldInverseTransposeLocation, false,
-      //   worldInverseTransposeMatrix);
-
       // Set the color to use
-      gl.uniform4fv(colorLocation, [0.2, 1, 0.2, 1]); // green
+      gl.uniform4fv(colorLocation, [0.984313725, 0.807843137, 0.474509803, 1]); // green
 
       // set the light position.
       gl.uniform3fv(lightWorldPositionLocation, lightPos);
 
       gl.uniform3fv(viewWorldPositionLocation, cameraPosition);
+
+      gl.uniform1f(shininessLocation, 20);
 
       // Draw heads in a grid
       for (var ii = 0; ii < 4; ++ii) {
@@ -599,19 +592,6 @@ void main() {
       var offset = 0;
       gl.drawArrays(primitiveType, offset, numVertices);
     }
-
-    // function drawHead(matrix, viewProjectionMatrix, matrixLocation, numVertices) {
-    //   // multiply that with the viewProjecitonMatrix
-    //   matrix = m4.multiply(viewProjectionMatrix, matrix);
-
-    //   // Set the matrix.
-    //   gl.uniformMatrix4fv(matrixLocation, false, matrix);
-
-    //   // Draw the geometry.
-    //   var primitiveType = gl.TRIANGLES;
-    //   var offset = 0;
-    //   gl.drawArrays(primitiveType, offset, numVertices);
-    // }
   }
 
   // Fill the buffer with the values that define a letter 'F'.
@@ -627,19 +607,6 @@ void main() {
 
     gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
     return positions.length / 3;
-  }
-
-  function setColors(gl) {
-    var normals = HeadData.normals;
-    var colors = new Uint8Array(normals.length);
-    var offset = 0;
-    for (var ii = 0; ii < colors.length; ii += 3) {
-      for (var jj = 0; jj < 3; ++jj) {
-        colors[offset] = (normals[offset] * 0.5 + 0.5) * 255;
-        ++offset;
-      }
-    }
-    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
   }
 
   function setNormals(gl) {
