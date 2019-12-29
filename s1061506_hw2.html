@@ -257,6 +257,7 @@ in vec4 a_position;
 in vec3 a_normal;
 
 uniform vec3 u_lightWorldPosition;
+uniform vec3 u_viewWorldPosition;
 
 uniform mat4 u_world;
 // A matrix to transform the positions by
@@ -266,6 +267,7 @@ uniform mat4 u_worldInverseTranspose;
 // a varying the color to the fragment shader
 out vec3 v_normal;
 out vec3 v_surfaceToLight;
+out vec3 v_surfaceToView;
 
 // all shaders have a main function
 void main() {
@@ -281,6 +283,10 @@ void main() {
   // compute the vector of the surface to the light
   // and pass it to the fragment shader
   v_surfaceToLight = u_lightWorldPosition - surfaceWorldPosition;
+
+  // compute the vector of the surface to the view/camera
+  // and pass it to the fragment shader
+  v_surfaceToView = u_viewWorldPosition - surfaceWorldPosition;
 }
 `;
 
@@ -291,6 +297,7 @@ precision mediump float;
 // Passed in and varied from the vertex shader.
 in vec3 v_normal;
 in vec3 v_surfaceToLight;
+in vec3 v_surfaceToView;
  
 uniform vec4 u_color;
 
@@ -302,16 +309,23 @@ void main() {
   // so it will not be a unit vector. Normalizing it
   // will make it a unit vector again
   vec3 normal = normalize(v_normal);
- 
+
   vec3 surfaceToLightDirection = normalize(v_surfaceToLight);
+  vec3 surfaceToViewDirection = normalize(v_surfaceToView);
+  vec3 halfVector = normalize(surfaceToLightDirection + surfaceToViewDirection);
+
 
   float light = dot(normal, surfaceToLightDirection);
+  float specular = dot(normal, halfVector);
  
   outColor = u_color;
  
   // Lets multiply just the color portion (not the alpha)
   // by the light
   outColor.rgb *= light;
+
+  // Just add in the specular
+  outColor.rgb += specular;
 }
 `;
 
@@ -333,20 +347,22 @@ void main() {
       [phongVertexShaderSource, phongFragmentShaderSource],
     ].map((source) => webglUtils.createProgramFromSources(gl, source));
 
-    var program = programs[0];
+    var program = programs[1];
     // look up where the vertex data needs to go.
     var positionAttributeLocation = gl.getAttribLocation(program, "a_position");
     var normalAttributeLocation = gl.getAttribLocation(program, "a_normal");
 
     // look up uniform locations
+    var worldLocation =
+      gl.getUniformLocation(program, "u_world");
     var worldViewProjectionLocation =
       gl.getUniformLocation(program, "u_worldViewProjection");
     var worldInverseTransposeLocation = gl.getUniformLocation(program, "u_worldInverseTranspose");
     var colorLocation = gl.getUniformLocation(program, "u_color");
     var lightWorldPositionLocation =
       gl.getUniformLocation(program, "u_lightWorldPosition");
-    var worldLocation =
-      gl.getUniformLocation(program, "u_world");
+    var viewWorldPositionLocation =
+      gl.getUniformLocation(program, "u_viewWorldPosition");
 
     // Create a buffer
     var positionBuffer = gl.createBuffer();
@@ -525,7 +541,7 @@ void main() {
       // var worldInverseTransposeMatrix = m4.transpose(m4.inverse(worldMatrix));
 
       // gl.uniformMatrix4fv(
-      //   worldLocation, false,
+      //   worldLocation, false,program
       //   worldMatrix);
       // gl.uniformMatrix4fv(
       //   worldInverseTransposeLocation, false,
@@ -536,6 +552,8 @@ void main() {
 
       // set the light position.
       gl.uniform3fv(lightWorldPositionLocation, lightPos);
+
+      gl.uniform3fv(viewWorldPositionLocation, cameraPosition);
 
       // Draw heads in a grid
       for (var ii = 0; ii < 4; ++ii) {
