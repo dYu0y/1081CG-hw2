@@ -367,7 +367,6 @@ void main() {
         moved = false;
         down = true;
         [prevX, prevY] = [e.clientX / element.width, e.clientY / element.height];
-        console.log([prevX, prevY]);
       }
       element.addEventListener('mousedown', downListener);
       let moveListener = (e) => {
@@ -590,7 +589,6 @@ void main() {
         var primitiveType = gl.TRIANGLES;
         var offset = 0;
         gl.drawArrays(primitiveType, offset, numVertices);
-        console.log('drawHead at ' + pos);
 
       }
     }
