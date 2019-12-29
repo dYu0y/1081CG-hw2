@@ -160,12 +160,14 @@ body.iframe {
   <canvas id="canvas"></canvas>
   <div id="uiContainer">
     <div id="ui">
-      <div id="targetAngle"></div>
-      <div id="targetHeight"></div>
-      <div id="lightTheta"></div>
-      <div id="lightPhi"></div>
+      <div id="headAngle"></div>
+      <p>頭的朝向(繞自身 y 軸轉)</p>
+      <div id="headViewHeight"></div>
+      <p>頭看的高度(繞自身 x 軸轉)</p>
       <div id="cameraTheta"></div>
+      <p>攝影機的高度(從上方看 ~ 從下方看)</p>
       <div id="cameraPhi"></div>
+      <p>攝影機看的角度(高度固定 看向世界中心點 繞圓周)</p>
     </div>
   </div>
 </body>
@@ -214,7 +216,7 @@ void flatShading() {
 
   float light = dot(normal, surfaceToLightDirection);
   float NdotH = max( 0.0, dot(normal, halfVector) );
-  float specular = ( u_shininess + 2.0 ) * pow( NdotH, u_shininess ) / ( 2.0 * 3.14159265 );
+  float specular = pow( NdotH, u_shininess ) * 1.2;
 
   v_flatColor = u_color;
   v_flatColor.rgb *= light;
@@ -231,7 +233,7 @@ void GouraudShading() {
 
   float light = dot(normal, surfaceToLightDirection);
   float NdotH = max( 0.0, dot(normal, halfVector) );
-  float specular = ( u_shininess + 2.0 ) * pow( NdotH, u_shininess ) / ( 2.0 * 3.14159265 );
+  float specular = pow( NdotH, u_shininess ) * 1.2;
 
   v_color = u_color;
   v_color.rgb *= light;
@@ -295,7 +297,7 @@ void PhongShading() {
 
   float light = dot(normal, surfaceToLightDirection);
   float NdotH = max( 0.0, dot(normal, halfVector) );
-  float specular = ( u_shininess + 2.0 ) * pow( NdotH, u_shininess ) / ( 3.0 * 3.14159265 );
+  float specular = pow( NdotH, u_shininess ) * 1.2;
  
   outColor = u_color;
   outColor.rgb *= light;
@@ -312,13 +314,13 @@ void toonShading() {
   float light = dot(normal, surfaceToLightDirection);
   outColor = u_color;
  
-  if (light < 0.251) {
+  if (light < 0.201) {
     outColor.rgb *= 0.25;
   }
   else if (light < 0.501) {
     outColor.rgb *= 0.5;
   }
-  else if (light < 0.751) {
+  else if (light < 0.801) {
     outColor.rgb *= 0.75;
   }
 }
@@ -339,7 +341,8 @@ void main() {
 }
 `;
 
-
+  let lightTheta;
+  let lightPhi;
   function main() {
     // Get A WebGL context
     /** @type {HTMLCanvasElement} */
@@ -347,6 +350,45 @@ void main() {
     var gl = canvas.getContext("webgl2");
     if (!gl) {
       return;
+    }
+    {
+      const element = canvas;
+      let moved, down;
+      let prevX, prevY;
+      lightTheta = 2.5529391839377524;
+      lightPhi = -0.9567298998521514;
+      let lightRadius = 290;
+      lightPos = [
+        lightRadius * Math.sin(lightTheta) * Math.sin(lightPhi),
+        lightRadius * Math.cos(lightTheta),
+        lightRadius * Math.sin(lightTheta) * Math.cos(lightPhi),
+      ];
+      let downListener = (e) => {
+        moved = false;
+        down = true;
+        [prevX, prevY] = [e.clientX / element.width, e.clientY / element.height];
+        console.log([prevX, prevY]);
+      }
+      element.addEventListener('mousedown', downListener);
+      let moveListener = (e) => {
+        if (down) {
+          var [x, y] = [e.clientX / element.width, e.clientY / element.height];
+          var [dx, dy] = [x - prevX, y - prevY];
+          lightTheta = Math.min(Math.max((lightTheta +  4 * dy), 0.0), Math.PI);
+          lightPhi = (lightPhi + 4 * dx) % (2 * Math.PI);
+          lightPos[2] = lightRadius * Math.sin(lightTheta) * Math.cos(lightPhi);
+          lightPos[0] = lightRadius * Math.sin(lightTheta) * Math.sin(lightPhi);
+          lightPos[1] = lightRadius * Math.cos(lightTheta);
+          [prevX, prevY] = [x, y];
+          drawScene();
+        }
+        moved = true;
+      }
+      element.addEventListener('mousemove', moveListener);
+      let upListener = (e) => {
+        down = false;
+      }
+      element.addEventListener('mouseup', upListener);
     }
 
     // Use our boilerplate utils to compile the shaders and link into a program
@@ -421,21 +463,15 @@ void main() {
       return d * Math.PI / 180;
     }
 
-    var target = [0, 0, 300];
-    var targetAngleRadians = degToRad(-54);
+    var target = [0, -53, 0];
+    var targetAngleRadians = degToRad(-45);
     var targetRadius = 300;
     var fieldOfViewRadians = degToRad(60);
 
-    var lightTheta = degToRad(90);
-    var lightPhi = degToRad(-35);
-    var lightPos = [0.0, 0.0, 0.0];
-    var lightRadius = 300;
-    lightPos[2] = lightRadius * Math.sin(lightTheta) * Math.cos(lightPhi);
-    lightPos[0] = lightRadius * Math.sin(lightTheta) * Math.sin(lightPhi);
-    lightPos[1] = lightRadius * Math.cos(lightTheta);
+    var lightPos;
 
-    var cameraTheta = degToRad(22);
-    var cameraPhi = degToRad(-220);
+    var cameraTheta = degToRad(100);
+    var cameraPhi = degToRad(-45);
     var cameraTarget = [0, 0, 0];
     var cameraPosition = [0, 0, 0];
     var cameraRadius = 500;
@@ -447,17 +483,13 @@ void main() {
     drawScene();
 
     // Setup a ui.
-    webglLessonsUI.setupSlider("#targetAngle", { value: radToDeg(targetAngleRadians), slide: updateTargetAngle, min: -360, max: 360 });
-    webglLessonsUI.setupSlider("#targetHeight", { value: target[1], slide: updateTargetHeight, min: -300, max: 300 });
-    webglLessonsUI.setupSlider("#lightTheta", { value: radToDeg(lightTheta), slide: updateLightTheta, min: -360, max: 360 });
-    webglLessonsUI.setupSlider("#lightPhi", { value: radToDeg(lightPhi), slide: updateLightPhi, min: -360, max: 360 });
+    webglLessonsUI.setupSlider("#headAngle", { value: radToDeg(targetAngleRadians), slide: updateTargetAngle, min: -360, max: 360 });
+    webglLessonsUI.setupSlider("#headViewHeight", { value: target[1], slide: updateTargetHeight, min: -300, max: 300 });
     webglLessonsUI.setupSlider("#cameraTheta", { value: radToDeg(cameraTheta), slide: updateCameraTheta, min: 1, max: 179 });
     webglLessonsUI.setupSlider("#cameraPhi", { value: radToDeg(cameraPhi), slide: updateCameraPhi, min: -360, max: 360 });
 
     function updateTargetAngle(event, ui) {
       targetAngleRadians = degToRad(ui.value);
-      target[0] = Math.sin(targetAngleRadians) * targetRadius;
-      target[2] = Math.cos(targetAngleRadians) * targetRadius;
       drawScene();
     }
 
@@ -465,24 +497,6 @@ void main() {
       target[1] = ui.value;
       drawScene();
     }
-
-
-    function updateLightTheta(event, ui) {
-      lightTheta = degToRad(ui.value);
-      lightPos[2] = lightRadius * Math.sin(lightTheta) * Math.cos(lightPhi);
-      lightPos[0] = lightRadius * Math.sin(lightTheta) * Math.sin(lightPhi);
-      lightPos[1] = lightRadius * Math.cos(lightTheta);
-      drawScene();
-    }
-
-    function updateLightPhi(event, ui) {
-      lightPhi = degToRad(ui.value);
-      lightPos[2] = lightRadius * Math.sin(lightTheta) * Math.cos(lightPhi);
-      lightPos[0] = lightRadius * Math.sin(lightTheta) * Math.sin(lightPhi);
-      lightPos[1] = lightRadius * Math.cos(lightTheta);
-      drawScene();
-    }
-
 
     function updateCameraTheta(event, ui) {
       cameraTheta = degToRad(ui.value);
@@ -548,17 +562,17 @@ void main() {
 
       gl.uniform3fv(viewWorldPositionLocation, cameraPosition);
 
-      gl.uniform1f(shininessLocation, 54);
+      gl.uniform1f(shininessLocation, 100);
       
       
       // Draw heads in a grid
       for (var ii = 0; ii < 4; ++ii) {
-        gl.uniform1i(shadingTypeLocation, 3 - ii);
+        gl.uniform1i(shadingTypeLocation, ii);
         
         var pos = [-225 + 150 * ii, 0, 0];
         var worldMatrix = m4.translation(...pos); //  m4.lookAt(pos, target, up);
         worldMatrix = m4.yRotate(worldMatrix, targetAngleRadians);
-        worldMatrix = m4.xRotate(worldMatrix, target[1] / 300. * Math.PI / 2);
+        worldMatrix = m4.xRotate(worldMatrix, -target[1] / 300. * Math.PI / 2);
         var worldViewProjectionMatrix = m4.multiply(viewProjectionMatrix,
           worldMatrix);
         var worldInverseTransposeMatrix = m4.transpose(m4.inverse(worldMatrix));
@@ -585,7 +599,7 @@ void main() {
   // Fill the buffer with the values that define a letter 'F'.
   function setGeometry(gl) {
     var positions = new Float32Array(HeadData.positions);
-    var matrix = m4.scale(m4.yRotation(Math.PI), 6, 6, 6);
+    var matrix = m4.scale(m4.identity(), 6, 6, 6);
     for (var ii = 0; ii < positions.length; ii += 3) {
       var vector = m4.transformVector(matrix, [positions[ii + 0], positions[ii + 1], positions[ii + 2], 1]);
       positions[ii + 0] = vector[0];
