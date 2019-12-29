@@ -182,7 +182,7 @@ for webgl-utils, m3, m4, and webgl-lessons-ui.
 <script>
   "use strict";
 
-  var flatVertexShaderSource = `#version 300 es
+  var vertexShaderSource = `#version 300 es
 in vec4 a_position;
 in vec3 a_normal;
 
@@ -196,68 +196,32 @@ uniform mat4 u_worldInverseTranspose;
 uniform vec4 u_color;
 uniform float u_shininess;
 
-flat out vec4 v_color;
-out vec3 v_normal;
-out vec3 v_surfaceToLight;
-out vec3 v_surfaceToView;
+uniform int u_shadingType;
 
-void main() {
-  gl_Position = u_worldViewProjection * a_position;
-  vec3 normal = normalize(mat3(u_worldInverseTranspose) * a_normal);
-  vec3 surfaceWorldPosition = (u_world * a_position).xyz;
-  vec3 surfaceToLightDirection = normalize(u_lightWorldPosition - surfaceWorldPosition);
-  vec3 surfaceToViewDirection = normalize(u_viewWorldPosition - surfaceWorldPosition);
-  vec3 halfVector = normalize(surfaceToLightDirection + surfaceToViewDirection);
-
-  float light = dot(normal, surfaceToLightDirection);
-  float NdotH = max( 0.0, dot(normal, halfVector) );
-  float specular = ( u_shininess + 2.0 ) * pow( NdotH, u_shininess ) / ( 2.0 * 3.14159265 );
-
-  v_color = u_color;
-  v_color.rgb *= light;
-  v_color.rgb += specular;
-}
-`;
-
-    var flatFragmentShaderSource = `#version 300 es
-
-precision mediump float;
-
-// Passed in and varied from the vertex shader.
-flat in vec4 v_color;
-in vec3 v_normal;
-in vec3 v_surfaceToLight;
-in vec3 v_surfaceToView;
-
-// we need to declare an output for the fragment shader
-out vec4 outColor;
-
-void main() {
-  outColor = v_color;
-}
-`;
-
-
-  var GouraudVertexShaderSource = `#version 300 es
-in vec4 a_position;
-in vec3 a_normal;
-
-uniform vec3 u_lightWorldPosition;
-uniform vec3 u_viewWorldPosition;
-
-uniform mat4 u_world;
-uniform mat4 u_worldViewProjection;
-uniform mat4 u_worldInverseTranspose;
-
-uniform vec4 u_color;
-uniform float u_shininess;
-
+flat out vec4 v_flatColor;
 out vec4 v_color;
 out vec3 v_normal;
 out vec3 v_surfaceToLight;
 out vec3 v_surfaceToView;
 
-void main() {
+void flatShading() {
+  gl_Position = u_worldViewProjection * a_position;
+  vec3 normal = normalize(mat3(u_worldInverseTranspose) * a_normal);
+  vec3 surfaceWorldPosition = (u_world * a_position).xyz;
+  vec3 surfaceToLightDirection = normalize(u_lightWorldPosition - surfaceWorldPosition);
+  vec3 surfaceToViewDirection = normalize(u_viewWorldPosition - surfaceWorldPosition);
+  vec3 halfVector = normalize(surfaceToLightDirection + surfaceToViewDirection);
+
+  float light = dot(normal, surfaceToLightDirection);
+  float NdotH = max( 0.0, dot(normal, halfVector) );
+  float specular = ( u_shininess + 2.0 ) * pow( NdotH, u_shininess ) / ( 2.0 * 3.14159265 );
+
+  v_flatColor = u_color;
+  v_flatColor.rgb *= light;
+  v_flatColor.rgb += specular;
+}
+
+void GouraudShading() {
   gl_Position = u_worldViewProjection * a_position;
   vec3 normal = normalize(mat3(u_worldInverseTranspose) * a_normal);
   vec3 surfaceWorldPosition = (u_world * a_position).xyz;
@@ -273,185 +237,81 @@ void main() {
   v_color.rgb *= light;
   v_color.rgb += specular;
 }
-`;
 
-  var GouraudFragmentShaderSource = `#version 300 es
-
-precision mediump float;
-
-// Passed in and varied from the vertex shader.
-in vec4 v_color;
-in vec3 v_normal;
-in vec3 v_surfaceToLight;
-in vec3 v_surfaceToView;
-
-// we need to declare an output for the fragment shader
-out vec4 outColor;
+void PhongShading() {
+  gl_Position = u_worldViewProjection * a_position;
+  v_normal = mat3(u_worldInverseTranspose) * a_normal;
+  vec3 surfaceWorldPosition = (u_world * a_position).xyz;
+  v_surfaceToLight = u_lightWorldPosition - surfaceWorldPosition;
+  v_surfaceToView = u_viewWorldPosition - surfaceWorldPosition;
+}
 
 void main() {
+  if (u_shadingType == 0) {
+    flatShading();
+  }
+  else if (u_shadingType == 1) {
+    GouraudShading();
+  }
+  else if (u_shadingType >= 2) {
+    PhongShading();
+  }
+}
+`;
+
+  var fragmentShaderSource = `#version 300 es
+
+  
+  precision mediump float;
+  precision highp int;
+  
+  flat in vec4 v_flatColor;
+  in vec4 v_color;
+  in vec3 v_normal;
+  in vec3 v_surfaceToLight;
+  in vec3 v_surfaceToView;
+  
+  uniform highp vec4 u_color;
+  uniform highp float u_shininess;
+  
+  uniform int u_shadingType;
+
+out vec4 outColor;
+
+void flatShading() {
+  outColor = v_flatColor;
+}
+
+void GouraudShading() {
   outColor = v_color;
 }
-`;
 
-
-  var PhongVertexShaderSource = `#version 300 es
-
-// an attribute is an input (in) to a vertex shader.
-// It will receive data from a buffer
-in vec4 a_position;
-in vec3 a_normal;
-
-uniform vec3 u_lightWorldPosition;
-uniform vec3 u_viewWorldPosition;
-
-uniform mat4 u_world;
-// A matrix to transform the positions by
-uniform mat4 u_worldViewProjection;
-uniform mat4 u_worldInverseTranspose;
-
-// a varying the color to the fragment shader
-out vec3 v_normal;
-out vec3 v_surfaceToLight;
-out vec3 v_surfaceToView;
-
-// all shaders have a main function
-void main() {
-  // Multiply the position by the matrix.
-  gl_Position = u_worldViewProjection * a_position;
-
-  // Pass the normal to the fragment shader.
-  v_normal = mat3(u_worldInverseTranspose) * a_normal;
-
-  // compute the world position of the surface
-  vec3 surfaceWorldPosition = (u_world * a_position).xyz;
- 
-  // compute the vector of the surface to the light
-  // and pass it to the fragment shader
-  v_surfaceToLight = u_lightWorldPosition - surfaceWorldPosition;
-
-  // compute the vector of the surface to the view/camera
-  // and pass it to the fragment shader
-  v_surfaceToView = u_viewWorldPosition - surfaceWorldPosition;
-}
-`;
-
-  var PhongFragmentShaderSource = `#version 300 es
-
-precision mediump float;
-
-// Passed in and varied from the vertex shader.
-in vec3 v_normal;
-in vec3 v_surfaceToLight;
-in vec3 v_surfaceToView;
- 
-uniform vec4 u_color;
-uniform float u_shininess;
-
-// we need to declare an output for the fragment shader
-out vec4 outColor;
-
-void main() {
-  // because v_normal is a varying it's interpolated
-  // so it will not be a unit vector. Normalizing it
-  // will make it a unit vector again
+void PhongShading() {
   vec3 normal = normalize(v_normal);
 
   vec3 surfaceToLightDirection = normalize(v_surfaceToLight);
   vec3 surfaceToViewDirection = normalize(v_surfaceToView);
   vec3 halfVector = normalize(surfaceToLightDirection + surfaceToViewDirection);
 
-
   float light = dot(normal, surfaceToLightDirection);
   float NdotH = max( 0.0, dot(normal, halfVector) );
-  float specular = ( u_shininess + 2.0 ) * pow( NdotH, u_shininess ) / ( 2.0 * 3.14159265 );
+  float specular = ( u_shininess + 2.0 ) * pow( NdotH, u_shininess ) / ( 3.0 * 3.14159265 );
  
   outColor = u_color;
- 
-  // Lets multiply just the color portion (not the alpha)
-  // by the light
   outColor.rgb *= light;
-
-  // Just add in the specular
   outColor.rgb += specular;
 }
-`;
 
-
-  var toonVertexShaderSource = `#version 300 es
-
-// an attribute is an input (in) to a vertex shader.
-// It will receive data from a buffer
-in vec4 a_position;
-in vec3 a_normal;
-
-uniform vec3 u_lightWorldPosition;
-uniform vec3 u_viewWorldPosition;
-
-uniform mat4 u_world;
-// A matrix to transform the positions by
-uniform mat4 u_worldViewProjection;
-uniform mat4 u_worldInverseTranspose;
-
-// a varying the color to the fragment shader
-out vec3 v_normal;
-out vec3 v_surfaceToLight;
-out vec3 v_surfaceToView;
-
-// all shaders have a main function
-void main() {
-  // Multiply the position by the matrix.
-  gl_Position = u_worldViewProjection * a_position;
-
-  // Pass the normal to the fragment shader.
-  v_normal = mat3(u_worldInverseTranspose) * a_normal;
-
-  // compute the world position of the surface
-  vec3 surfaceWorldPosition = (u_world * a_position).xyz;
- 
-  // compute the vector of the surface to the light
-  // and pass it to the fragment shader
-  v_surfaceToLight = u_lightWorldPosition - surfaceWorldPosition;
-
-  // compute the vector of the surface to the view/camera
-  // and pass it to the fragment shader
-  v_surfaceToView = u_viewWorldPosition - surfaceWorldPosition;
-}
-`;
-
-  var toonFragmentShaderSource = `#version 300 es
-
-precision mediump float;
-
-// Passed in and varied from the vertex shader.
-in vec3 v_normal;
-in vec3 v_surfaceToLight;
-in vec3 v_surfaceToView;
- 
-uniform vec4 u_color;
-uniform float u_shininess;
-
-// we need to declare an output for the fragment shader
-out vec4 outColor;
-
-void main() {
-  // because v_normal is a varying it's interpolated
-  // so it will not be a unit vector. Normalizing it
-  // will make it a unit vector again
+void toonShading() {
   vec3 normal = normalize(v_normal);
 
   vec3 surfaceToLightDirection = normalize(v_surfaceToLight);
   vec3 surfaceToViewDirection = normalize(v_surfaceToView);
   vec3 halfVector = normalize(surfaceToLightDirection + surfaceToViewDirection);
 
-
   float light = dot(normal, surfaceToLightDirection);
-  float NdotH = max( 0.0, dot(normal, halfVector) );
-  float specular = ( u_shininess + 2.0 ) * pow( NdotH, u_shininess ) / ( 2.0 * 3.14159265 );
- 
   outColor = u_color;
  
-  // Lets multiply just the color portion (not the alpha)
-  // by the light
   if (light < 0.251) {
     outColor.rgb *= 0.25;
   }
@@ -461,9 +321,21 @@ void main() {
   else if (light < 0.751) {
     outColor.rgb *= 0.75;
   }
+}
 
-  // Just add in the specular
-  // outColor.rgb += specular;
+void main() {
+  if (u_shadingType == 0) {
+    flatShading();
+  }
+  else if (u_shadingType == 1) {
+    GouraudShading();
+  }
+  else if (u_shadingType == 2) {
+    PhongShading();
+  }
+  else { // ==4
+    toonShading();
+  } 
 }
 `;
 
@@ -478,14 +350,7 @@ void main() {
     }
 
     // Use our boilerplate utils to compile the shaders and link into a program
-    var programs = [
-      [flatVertexShaderSource, flatFragmentShaderSource],
-      [GouraudVertexShaderSource, GouraudFragmentShaderSource],
-      [PhongVertexShaderSource, PhongFragmentShaderSource],
-      [toonVertexShaderSource, toonFragmentShaderSource],
-    ].map((source) => webglUtils.createProgramFromSources(gl, source));
-
-    var program = programs[3];
+    var program = webglUtils.createProgramFromSources(gl, [vertexShaderSource, fragmentShaderSource]);
     // look up where the vertex data needs to go.
     var positionAttributeLocation = gl.getAttribLocation(program, "a_position");
     var normalAttributeLocation = gl.getAttribLocation(program, "a_normal");
@@ -502,6 +367,7 @@ void main() {
     var viewWorldPositionLocation =
       gl.getUniformLocation(program, "u_viewWorldPosition");
     var shininessLocation = gl.getUniformLocation(program, "u_shininess");
+    var shadingTypeLocation = gl.getUniformLocation(program, "u_shadingType");
 
     // Create a buffer
     var positionBuffer = gl.createBuffer();
@@ -556,19 +422,19 @@ void main() {
     }
 
     var target = [0, 0, 300];
-    var targetAngleRadians = 0;
+    var targetAngleRadians = degToRad(-54);
     var targetRadius = 300;
     var fieldOfViewRadians = degToRad(60);
 
-    var lightTheta = Math.PI / 2;
-    var lightPhi = 0;
+    var lightTheta = degToRad(90);
+    var lightPhi = degToRad(-35);
     var lightPos = [0.0, 0.0, 0.0];
     var lightRadius = 300;
     lightPos[2] = lightRadius * Math.sin(lightTheta) * Math.cos(lightPhi);
     lightPos[0] = lightRadius * Math.sin(lightTheta) * Math.sin(lightPhi);
     lightPos[1] = lightRadius * Math.cos(lightTheta);
 
-    var cameraTheta = degToRad(60);
+    var cameraTheta = degToRad(22);
     var cameraPhi = degToRad(-220);
     var cameraTarget = [0, 0, 0];
     var cameraPosition = [0, 0, 0];
@@ -683,9 +549,12 @@ void main() {
       gl.uniform3fv(viewWorldPositionLocation, cameraPosition);
 
       gl.uniform1f(shininessLocation, 54);
-
+      
+      
       // Draw heads in a grid
       for (var ii = 0; ii < 4; ++ii) {
+        gl.uniform1i(shadingTypeLocation, 3 - ii);
+        
         var pos = [-225 + 150 * ii, 0, 0];
         var worldMatrix = m4.translation(...pos); //  m4.lookAt(pos, target, up);
         worldMatrix = m4.yRotate(worldMatrix, targetAngleRadians);
@@ -710,23 +579,6 @@ void main() {
         console.log('drawHead at ' + pos);
 
       }
-      var worldMatrix = m4.translation(...target);
-      var worldViewProjectionMatrix = m4.multiply(viewProjectionMatrix,
-        worldMatrix);
-      var worldInverseTransposeMatrix = m4.transpose(m4.inverse(worldMatrix));
-
-      gl.uniformMatrix4fv(
-        worldLocation, false,
-        worldMatrix);
-      gl.uniformMatrix4fv(
-        worldInverseTransposeLocation, false,
-        worldInverseTransposeMatrix);
-      gl.uniformMatrix4fv(
-        worldViewProjectionLocation, false,
-        worldViewProjectionMatrix);
-      var primitiveType = gl.TRIANGLES;
-      var offset = 0;
-      gl.drawArrays(primitiveType, offset, numVertices);
     }
   }
 
